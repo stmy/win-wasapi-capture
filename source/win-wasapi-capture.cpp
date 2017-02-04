@@ -203,6 +203,7 @@ void wasapi_capture::inject()
 void wasapi_capture::eject()
 {
 	SetEvent(event_exit);
+	SetEvent(event_keepalive);
 }
 
 void wasapi_capture::init_events()
