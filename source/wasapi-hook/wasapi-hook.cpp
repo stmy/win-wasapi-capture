@@ -292,11 +292,12 @@ void terminator_proc()
 	}
 
 	unhook(&release_buffer);
+
+	Sleep(100); // make sure hook_release_buffer is complete
+
 	free_events();
 	free_pipe();
 	free_shared_memory();
-
-	Sleep(10); // make sure hook_release_buffer is complete
 
 	FreeLibraryAndExitThread(this_module, 0);
 }
