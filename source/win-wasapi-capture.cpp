@@ -50,7 +50,13 @@ wasapi_capture::wasapi_capture(obs_source_t* source)
 
 wasapi_capture::~wasapi_capture()
 {
-	
+	destroying = true;
+	WaitForSingleObject(keepalive_thread, INFINITE);
+	WaitForSingleObject(capture_thread, INFINITE);
+	eject();
+	free_pipe();
+	free_shared_memory();
+	free_events();
 }
 
 //-----------------------------------------------------------------------------
@@ -148,7 +154,7 @@ bool wasapi_capture::receive_audio_packet()
 	}
 
 	if (!ReadFile(pipe, capture_buffer, header.data_length, &bytes_read, nullptr) ||
-		bytes_read != sizeof(header.data_length))
+		bytes_read != header.data_length)
 	{
 		return false; // invalid data.
 	}
