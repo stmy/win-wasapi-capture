@@ -1,0 +1,23 @@
+# Standalong build directories
+
+[b|B]uild
+[b|B]uild64
+[b|B]uild32
+[r|R]elease
+[r|R]elease64
+[r|R]elease32
+[d|D]ebug
+[d|D]ebug64
+[d|D]ebug32
+
+# CMake things
+
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+Testing
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
