@@ -1,6 +1,9 @@
 #include <string>
 #include <util/platform.h>
 #include <util/threading.h>
+#include <windows.h>
+#include <ks.h>
+#include <ksmedia.h>
 #include "win-wasapi-capture.h"
 extern "C" {
 #include "../../win-capture/obfuscate.h"
@@ -71,6 +74,48 @@ void wasapi_capture::capture_thread_proc_proxy(LPVOID param)
 	((wasapi_capture*)param)->capture_thread_proc();
 }
 
+#define KSAUDIO_SPEAKER_4POINT1 (KSAUDIO_SPEAKER_QUAD|SPEAKER_LOW_FREQUENCY)
+#define KSAUDIO_SPEAKER_2POINT1 (KSAUDIO_SPEAKER_STEREO|SPEAKER_LOW_FREQUENCY)
+
+// taken from obs-studio/plugins/win-wasapi/win-wasapi.cpp
+static speaker_layout convert_speaker_layout(DWORD layout, WORD channels)
+{
+	switch (layout) {
+	case KSAUDIO_SPEAKER_QUAD:             return SPEAKERS_QUAD;
+	case KSAUDIO_SPEAKER_2POINT1:          return SPEAKERS_2POINT1;
+	case KSAUDIO_SPEAKER_4POINT1:          return SPEAKERS_4POINT1;
+	case KSAUDIO_SPEAKER_SURROUND:         return SPEAKERS_SURROUND;
+	case KSAUDIO_SPEAKER_5POINT1:          return SPEAKERS_5POINT1;
+	case KSAUDIO_SPEAKER_5POINT1_SURROUND: return SPEAKERS_5POINT1_SURROUND;
+	case KSAUDIO_SPEAKER_7POINT1:          return SPEAKERS_7POINT1;
+	case KSAUDIO_SPEAKER_7POINT1_SURROUND: return SPEAKERS_7POINT1_SURROUND;
+	}
+
+	return (speaker_layout)channels;
+}
+
+static audio_format convert_audio_format(WAVEFORMATEXTENSIBLE* wfext)
+{
+	if (wfext->Format.wFormatTag == WAVE_FORMAT_PCM ||
+		wfext->Format.wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
+		wfext->SubFormat == KSDATAFORMAT_SUBTYPE_PCM) {
+		switch (wfext->Format.wBitsPerSample) {
+		case 8: return AUDIO_FORMAT_U8BIT;
+		case 16: return AUDIO_FORMAT_16BIT;
+		case 32: return AUDIO_FORMAT_32BIT;
+		}
+	} else if (
+		wfext->Format.wFormatTag == WAVE_FORMAT_IEEE_FLOAT ||
+		wfext->Format.wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
+		wfext->SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) {
+		if (wfext->Format.wBitsPerSample == 32) {
+			return AUDIO_FORMAT_FLOAT;
+		}
+	}
+
+	return AUDIO_FORMAT_UNKNOWN;
+}
+
 void wasapi_capture::capture_thread_proc()
 {
 	DWORD result, bytes_read;
@@ -93,10 +138,11 @@ void wasapi_capture::capture_thread_proc()
 				ReadFile(pipe, buffer, header.data_length, &bytes_read, nullptr);
 
 				obs_source_audio audio;
-				audio.format = AUDIO_FORMAT_16BIT;
+				audio.format = convert_audio_format(&header.wfext);
 				audio.frames = header.frames;
 				audio.samples_per_sec = header.wfext.Format.nSamplesPerSec;
-				audio.speakers = SPEAKERS_7POINT1_SURROUND;
+				audio.speakers = convert_speaker_layout(
+					header.wfext.dwChannelMask, header.wfext.Format.nChannels);
 				audio.timestamp = os_gettime_ns();
 				audio.data[0] = buffer;
 
