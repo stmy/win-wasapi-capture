@@ -125,9 +125,9 @@ void wasapi_capture::capture_thread_proc()
 
 	while (!destroying)
 	{
-		result = WaitForSingleObject(event_packet_sent, INFINITE);
-		ResetEvent(event_packet_sent);
+		result = WaitForSingleObject(event_packet_sent, 500);
 		if (result == WAIT_OBJECT_0 && !destroying) {
+			ResetEvent(event_packet_sent);
 			while (os_atomic_load_long(&shared_data->packets) > 0) {
 				ReadFile(pipe, &header, sizeof(header), &bytes_read, nullptr);
 
@@ -265,7 +265,7 @@ void wasapi_capture::init_events()
 	event_exit            = CREATE_EVENT(EVENT_EXIT);
 	event_packet_sent     = CREATE_EVENT(EVENT_PACKET_SENT);
 	event_keepalive       = CREATE_EVENT(EVENT_KEEPALIVE);
-	
+
 
 #undef CREATE_EVENT
 }
