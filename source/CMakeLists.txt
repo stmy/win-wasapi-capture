@@ -36,3 +36,4 @@ if(NOT is-standalone-build)
 endif()
 
 add_subdirectory(wasapi-hook)
+add_subdirectory(inject-helper)
