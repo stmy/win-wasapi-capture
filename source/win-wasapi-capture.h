@@ -50,7 +50,7 @@ public:
 private:
 	static void keepalive_thread_proc_proxy(LPVOID param);
 	void keepalive_thread_proc();
-	static void wasapi_capture::capture_thread_proc_proxy(LPVOID param);
+	static void capture_thread_proc_proxy(LPVOID param);
 	void capture_thread_proc();
 	void init_events();
 	void free_events();
