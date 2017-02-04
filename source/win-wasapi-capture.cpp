@@ -1,10 +1,11 @@
 #include <string>
-#include <util/platform.h>
-#include <util/threading.h>
 #include <windows.h>
 #include <ks.h>
 #include <ksmedia.h>
-#include "win-wasapi-capture.h"
+#include <obs-module.h>
+#include <util/platform.h>
+#include <util/threading.h>
+
 extern "C" {
 #include "../../win-capture/obfuscate.h"
 #include "../../win-capture/inject-library.h"
@@ -12,6 +13,8 @@ extern "C" {
 #include "../../win-capture/window-helpers.h"
 #undef class
 }
+
+#include "win-wasapi-capture.h"
 #include "wasapi-hook-info.h"
 
 //-----------------------------------------------------------------------------
@@ -65,7 +68,7 @@ void wasapi_capture::keepalive_thread_proc()
 	while (!destroying)
 	{
 		SetEvent(event_keepalive);
-		Sleep(KEEPALIVE_TIMEOUT / 2);
+		Sleep(min(1000, KEEPALIVE_TIMEOUT / 2));
 	}
 }
 
@@ -74,13 +77,14 @@ void wasapi_capture::capture_thread_proc_proxy(LPVOID param)
 	((wasapi_capture*)param)->capture_thread_proc();
 }
 
+// taken from obs-studio/plugins/win-wasapi/win-wasapi.cpp
+speaker_layout wasapi_capture::convert_speaker_layout(WAVEFORMATEXTENSIBLE* wfext)
+{
+
 #define KSAUDIO_SPEAKER_4POINT1 (KSAUDIO_SPEAKER_QUAD|SPEAKER_LOW_FREQUENCY)
 #define KSAUDIO_SPEAKER_2POINT1 (KSAUDIO_SPEAKER_STEREO|SPEAKER_LOW_FREQUENCY)
 
-// taken from obs-studio/plugins/win-wasapi/win-wasapi.cpp
-static speaker_layout convert_speaker_layout(DWORD layout, WORD channels)
-{
-	switch (layout) {
+	switch (wfext->dwChannelMask) {
 	case KSAUDIO_SPEAKER_QUAD:             return SPEAKERS_QUAD;
 	case KSAUDIO_SPEAKER_2POINT1:          return SPEAKERS_2POINT1;
 	case KSAUDIO_SPEAKER_4POINT1:          return SPEAKERS_4POINT1;
@@ -91,24 +95,30 @@ static speaker_layout convert_speaker_layout(DWORD layout, WORD channels)
 	case KSAUDIO_SPEAKER_7POINT1_SURROUND: return SPEAKERS_7POINT1_SURROUND;
 	}
 
-	return (speaker_layout)channels;
+	return (speaker_layout)wfext->Format.nChannels;
 }
 
-static audio_format convert_audio_format(WAVEFORMATEXTENSIBLE* wfext)
+audio_format wasapi_capture::convert_audio_format(WAVEFORMATEXTENSIBLE* wfext)
 {
-	if (wfext->Format.wFormatTag == WAVE_FORMAT_PCM ||
-		wfext->Format.wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
-		wfext->SubFormat == KSDATAFORMAT_SUBTYPE_PCM) {
-		switch (wfext->Format.wBitsPerSample) {
+	const WORD format = wfext->Format.wFormatTag;
+	const GUID subformat = wfext->SubFormat;
+	const WORD bits = wfext->Format.wBitsPerSample;
+
+	if (format == WAVE_FORMAT_PCM ||
+		format == WAVE_FORMAT_EXTENSIBLE &&
+		subformat == KSDATAFORMAT_SUBTYPE_PCM) 
+	{
+		switch (bits) {
 		case 8: return AUDIO_FORMAT_U8BIT;
 		case 16: return AUDIO_FORMAT_16BIT;
 		case 32: return AUDIO_FORMAT_32BIT;
 		}
 	} else if (
-		wfext->Format.wFormatTag == WAVE_FORMAT_IEEE_FLOAT ||
-		wfext->Format.wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
-		wfext->SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) {
-		if (wfext->Format.wBitsPerSample == 32) {
+		format == WAVE_FORMAT_IEEE_FLOAT ||
+		format == WAVE_FORMAT_EXTENSIBLE &&
+		subformat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) 
+	{
+		if (bits == 32) {
 			return AUDIO_FORMAT_FLOAT;
 		}
 	}
@@ -116,44 +126,73 @@ static audio_format convert_audio_format(WAVEFORMATEXTENSIBLE* wfext)
 	return AUDIO_FORMAT_UNKNOWN;
 }
 
-void wasapi_capture::capture_thread_proc()
+bool wasapi_capture::receive_audio_packet()
 {
-	DWORD result, bytes_read;
+	DWORD bytes_read;
 	audio_packet_header header;
-	size_t current_buflen = 1024;
-	uint8_t* buffer = (uint8_t*)malloc(current_buflen);
-
-	while (!destroying)
+	if (!ReadFile(pipe, &header, sizeof(header), &bytes_read, nullptr) ||
+		bytes_read != sizeof(header) ||
+		header.magic != AUDIO_PACKET_MAGIC)
 	{
-		result = WaitForSingleObject(event_packet_sent, 500);
-		if (result == WAIT_OBJECT_0 && !destroying) {
-			ResetEvent(event_packet_sent);
-			while (os_atomic_load_long(&shared_data->packets) > 0) {
-				ReadFile(pipe, &header, sizeof(header), &bytes_read, nullptr);
+		return false; // failed reading header
+	}
 
-				if (current_buflen < header.data_length) {
-					buffer = (uint8_t*)realloc(buffer, header.data_length);
-				}
-
-				ReadFile(pipe, buffer, header.data_length, &bytes_read, nullptr);
-
-				obs_source_audio audio;
-				audio.format = convert_audio_format(&header.wfext);
-				audio.frames = header.frames;
-				audio.samples_per_sec = header.wfext.Format.nSamplesPerSec;
-				audio.speakers = convert_speaker_layout(
-					header.wfext.dwChannelMask, header.wfext.Format.nChannels);
-				audio.timestamp = os_gettime_ns();
-				audio.data[0] = buffer;
-
-				obs_source_output_audio(source, &audio);
-
-				os_atomic_dec_long(&shared_data->packets);
-			}
+	// Extend buffer if required
+	if (capture_buflen < header.data_length) {
+		capture_buflen = header.data_length;
+		capture_buffer = (uint8_t*)realloc(capture_buffer, capture_buflen);
+		if (!capture_buffer) {
+			destroying = true;
+			return false; // out of memory
 		}
 	}
 
-	free(buffer);
+	if (!ReadFile(pipe, capture_buffer, header.data_length, &bytes_read, nullptr) ||
+		bytes_read != sizeof(header.data_length))
+	{
+		return false; // invalid data.
+	}
+
+	obs_source_audio audio;
+	audio.format          = convert_audio_format(&header.wfext);
+	audio.frames          = header.frames;
+	audio.samples_per_sec = header.wfext.Format.nSamplesPerSec;
+	audio.speakers        = convert_speaker_layout(&header.wfext);
+	audio.timestamp       = header.timestamp;
+	audio.data[0]         = capture_buffer;
+
+	obs_source_output_audio(source, &audio);
+
+	return true;
+}
+
+void wasapi_capture::capture_thread_proc()
+{
+	capture_buflen = 441 * 8 * 32; // 44.1kHz, 8ch, 32bit, 100ms
+	capture_buffer = (uint8_t*)malloc(capture_buflen);
+
+	while (!destroying) {
+		DWORD wait_result = WaitForSingleObject(event_packet_sent, 500);
+		if (wait_result != WAIT_OBJECT_0 || destroying) {
+			continue;
+		}
+
+		while (os_atomic_load_long(&shared_data->packets) > 0) {
+			bool receive_result = receive_audio_packet();
+			os_atomic_dec_long(&shared_data->packets);
+
+			if (!receive_result) {
+
+				// TODO: resetting pipe is required here
+
+				break;
+			}
+		}
+
+		ResetEvent(event_packet_sent);
+	}
+
+	free(capture_buffer);
 }
 
 HANDLE wasapi_capture::open_process_obf(DWORD desired_access,
@@ -308,8 +347,8 @@ void wasapi_capture::init_shared_memory()
 	shared_memory_name += std::to_string(process_id);
 
 	shmem = CreateFileMappingA(
-		INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(shmem_data),
-		shared_memory_name.c_str());
+		INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, 
+		sizeof(shmem_data), shared_memory_name.c_str());
 
 	shared_data = (shmem_data*)MapViewOfFile(
 		shmem, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(shmem_data));

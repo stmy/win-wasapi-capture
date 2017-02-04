@@ -5,34 +5,34 @@ if(is-standalone-build)
 endif()
 
 include_directories(
-    ../../../libobs/
-    ../../../deps/ipc-util)
+	../../../libobs/
+	../../../deps/ipc-util)
 
 set(win-wasapi-capture_HEADERS
-    ../../win-capture/obfuscate.h
-    ../../win-capture/inject-library.h
-    ../../win-capture/window-helpers.h
-    ../../win-capture/hook-helpers.h
+	../../win-capture/obfuscate.h
+	../../win-capture/inject-library.h
+	../../win-capture/window-helpers.h
+	../../win-capture/hook-helpers.h
 	win-wasapi-capture.h
-    wasapi-hook-info.h)
+	wasapi-hook-info.h)
 
 set(win-wasapi-capture_SOURCES
-    ../../win-capture/obfuscate.c
-    ../../win-capture/inject-library.c
-    ../../win-capture/window-helpers.c
-    win-wasapi-capture.cpp
+	../../win-capture/obfuscate.c
+	../../win-capture/inject-library.c
+	../../win-capture/window-helpers.c
+	win-wasapi-capture.cpp
 	plugin-main.cpp)
 
 add_library(win-wasapi-capture MODULE
-    ${win-wasapi-capture_HEADERS}
-    ${win-wasapi-capture_SOURCES})
+	${win-wasapi-capture_HEADERS}
+	${win-wasapi-capture_SOURCES})
 
 target_link_libraries(win-wasapi-capture
 	libobs
-    psapi)
+	psapi)
 
 if(NOT is-standalone-build)
-    install_obs_plugin_with_data(win-wasapi-capture data)
+	install_obs_plugin_with_data(win-wasapi-capture data)
 endif()
 
 add_subdirectory(wasapi-hook)

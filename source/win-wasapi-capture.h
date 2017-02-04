@@ -1,6 +1,10 @@
+#pragma once
+
 #include <obs-module.h>
 #include <string>
 #include <windows.h>
+#include <ks.h>
+#include <ksmedia.h>
 
 enum window_priority;
 struct shmem_data;
@@ -17,6 +21,8 @@ private:
 	HANDLE           pipe;
 	HANDLE           shmem;
 	shmem_data*      shared_data;
+	uint8_t*         capture_buffer;
+	size_t           capture_buflen;
 	HANDLE           capture_thread;
 	HANDLE           keepalive_thread;
 	bool             destroying;
@@ -51,6 +57,11 @@ private:
 	static void keepalive_thread_proc_proxy(LPVOID param);
 	void keepalive_thread_proc();
 	static void capture_thread_proc_proxy(LPVOID param);
+	static speaker_layout convert_speaker_layout(
+			WAVEFORMATEXTENSIBLE* wfext);
+	static audio_format convert_audio_format(
+			WAVEFORMATEXTENSIBLE* wfext);
+	bool receive_audio_packet();
 	void capture_thread_proc();
 	void init_events();
 	void free_events();
