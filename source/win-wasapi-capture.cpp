@@ -228,8 +228,10 @@ void wasapi_capture::free_events()
 	CloseHandle(event_capture_start);
 	CloseHandle(event_capture_stop);
 	CloseHandle(event_capture_restart);
+	CloseHandle(event_ready);
 	CloseHandle(event_exit);
 	CloseHandle(event_packet_sent);
+	CloseHandle(event_keepalive);
 }
 
 void wasapi_capture::init_pipe()
