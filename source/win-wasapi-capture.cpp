@@ -46,6 +46,7 @@ wasapi_capture::wasapi_capture(obs_source_t* source)
 
 	process_id = 0;
 	destroying = false;
+	target_process = INVALID_HANDLE_VALUE;
 }
 
 wasapi_capture::~wasapi_capture()
@@ -75,6 +76,8 @@ void wasapi_capture::keepalive_thread_proc()
 	{
 		SetEvent(event_keepalive);
 		Sleep(min(1000, KEEPALIVE_TIMEOUT / 2));
+
+		update_capture();
 	}
 }
 
@@ -321,21 +324,21 @@ void wasapi_capture::inject_with_helper(bool is_64bit)
 
 void wasapi_capture::inject()
 {
-	HANDLE proc = open_process_obf(PROCESS_ALL_ACCESS, false, process_id);     
-	bool is_64bit = is_64bit_target(proc);
+	target_process = open_process_obf(PROCESS_ALL_ACCESS, false, process_id);
+	bool is_64bit = is_64bit_target(target_process);
 
 #ifdef _WIN64
-	inject_direct(is_64bit, proc);
+	inject_direct(is_64bit, target_process);
 #else
 	if (is_64bit) inject_with_helper(is_64bit);
-	else          inject_direct(is_64bit, proc);
+	else          inject_direct(is_64bit, target_process);
 #endif
-
-	CloseHandle(proc);
 }
 
 void wasapi_capture::eject()
 {
+	CloseHandle(target_process);
+	target_process = INVALID_HANDLE_VALUE;
 	SetEvent(event_exit);
 	SetEvent(event_keepalive);
 }
@@ -411,27 +414,46 @@ void wasapi_capture::free_shared_memory()
 	shmem = NULL;
 }
 
-void wasapi_capture::updated(obs_data_t* settings)
+void wasapi_capture::exit_capture()
+{
+	eject();
+	free_pipe();
+	free_events();
+	free_shared_memory();
+	process_id = 0;
+}
+
+void wasapi_capture::start_capture()
+{
+	init_events();
+	init_pipe();
+	init_shared_memory();
+	ResetEvent(event_exit);
+	inject();
+}
+
+void wasapi_capture::update_capture()
+{
+	// Rehook if target is changed
+	DWORD new_pid = get_target_process_id();
+	DWORD prev_pid = process_id;
+
+	if (prev_pid != new_pid && prev_pid != 0) {
+		exit_capture();
+	}
+
+	if (new_pid != prev_pid && new_pid != 0) {
+		process_id = new_pid;
+		start_capture();
+	}
+
+}
+
+void wasapi_capture::update_settings(obs_data_t* settings)
 {
 	this->settings = settings;
 
-	// Rehook if target is changed
-	DWORD new_pid = get_target_process_id();
-
-	if (process_id != new_pid && process_id != 0) {
-		eject();
-		free_pipe();
-		free_events();
-		free_shared_memory();
-	}
-	process_id = new_pid;
-	if (process_id != 0) {
-		init_events();
-		init_pipe();
-		init_shared_memory();
-		ResetEvent(event_exit);
-		inject();
-	}
+	update_capture();
 }
 
 DWORD wasapi_capture::get_target_process_id()
@@ -464,7 +486,7 @@ const char* wasapi_capture::get_name(void* data)
 void* wasapi_capture::create(obs_data_t* settings, obs_source_t* source)
 {
 	wasapi_capture* wc = new wasapi_capture(source);
-	wc->updated(settings);
+	wc->update_settings(settings);
 	return wc;
 }
 
@@ -592,7 +614,7 @@ obs_properties_t* wasapi_capture::get_properties(void* data)
 
 void wasapi_capture::update(void* data, obs_data_t* settings)
 {
-	reinterpret_cast<wasapi_capture*>(data)->updated(settings);
+	reinterpret_cast<wasapi_capture*>(data)->update_settings(settings);
 }
 
 

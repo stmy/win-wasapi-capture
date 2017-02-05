@@ -15,6 +15,7 @@ private:
 	obs_data_t*      settings;
 
 	HANDLE           injector_process;
+	HANDLE           target_process;
 	DWORD            process_id;
 	bool             is_64bit;
 	DWORD            thread_id;
@@ -73,7 +74,10 @@ private:
 	void free_pipe();
 	void init_shared_memory();
 	void free_shared_memory();
-	void updated(obs_data_t* settings);
+	void exit_capture();
+	void start_capture();
+	void update_capture();
+	void update_settings(obs_data_t* settings);
 	DWORD get_target_process_id();
 	static HANDLE open_process_obf(DWORD desired_access,
 			bool inherit_handle, DWORD process_id);
