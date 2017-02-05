@@ -186,7 +186,10 @@ void wasapi_capture::capture_thread_proc()
 			continue;
 		}
 
-		while (os_atomic_load_long(&shared_data->packets) > 0) {
+		while (shared_data && 
+				os_atomic_load_long(&shared_data->packets) > 0 && 
+				!destroying) 
+		{
 			bool receive_result = receive_audio_packet();
 			os_atomic_dec_long(&shared_data->packets);
 

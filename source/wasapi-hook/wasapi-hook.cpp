@@ -58,6 +58,8 @@ static inline uint64_t os_gettime_ns()
 static HRESULT STDMETHODCALLTYPE hook_release_buffer(
 	IAudioRenderClient *client, UINT32 frames_written, DWORD flags)
 {
+	EnterCriticalSection(&cs_release_buffer);
+
 	HRESULT hr;
 	IAudioClient *aclient;
 	uint8_t *buffer;
@@ -120,6 +122,8 @@ static HRESULT STDMETHODCALLTYPE hook_release_buffer(
 	release_buffer_t call = (release_buffer_t)release_buffer.call_addr;
 	hr = call(client, frames_written, flags);
 	rehook(&release_buffer);
+
+	LeaveCriticalSection(&cs_release_buffer);
 
 	return hr;
 }
@@ -297,7 +301,9 @@ void terminator_proc()
 		}
 	}
 
+	EnterCriticalSection(&cs_release_buffer);
 	unhook(&release_buffer);
+	LeaveCriticalSection(&cs_release_buffer);
 
 	Sleep(100); // make sure hook_release_buffer is complete
 
@@ -318,6 +324,8 @@ BOOL WINAPI DllMain(HMODULE module, DWORD reason_for_call, LPVOID reserved)
 		CoInitialize(NULL);
 		get_wasapi_offsets();
 		CoUninitialize();
+
+		InitializeCriticalSection(&cs_release_buffer);
 
 		init_shared_memory();
 		init_pipe();
