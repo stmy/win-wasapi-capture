@@ -67,9 +67,15 @@ static HRESULT STDMETHODCALLTYPE hook_release_buffer(
 	size_t data_length;
 
 	// ****** This may be version specific ******
+#ifdef _WIN64
 	aclient = *(IAudioClient**)((uintptr_t)client + 0x10 * sizeof(void*));
 	buffer = *(uint8_t**)((uintptr_t)client + 0x16 * sizeof(void*));
 	wfex = *(WAVEFORMATEX**)((uintptr_t)client + 0x14 * sizeof(void*));
+#else
+	aclient = *(IAudioClient**)((uintptr_t)client + 0x12 * sizeof(void*));
+	buffer = *(uint8_t**)((uintptr_t)client + 0x1A * sizeof(void*));
+	wfex = *(WAVEFORMATEX**)((uintptr_t)client + 0x18 * sizeof(void*));
+#endif
 
 
 	// get timestamp

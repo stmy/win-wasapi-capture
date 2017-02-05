@@ -162,7 +162,7 @@ bool wasapi_capture::receive_audio_packet()
 		return false; // invalid data.
 	}
 
-	obs_source_audio audio;
+	obs_source_audio audio = {0};
 	audio.format          = convert_audio_format(&header.wfext);
 	audio.frames          = header.frames;
 	audio.samples_per_sec = header.wfext.Format.nSamplesPerSec;
@@ -328,7 +328,8 @@ void wasapi_capture::inject()
 	bool is_64bit = is_64bit_target(target_process);
 
 #ifdef _WIN64
-	inject_direct(is_64bit, target_process);
+	if (is_64bit) inject_direct(is_64bit, target_process);
+	else          inject_with_helper(is_64bit);
 #else
 	if (is_64bit) inject_with_helper(is_64bit);
 	else          inject_direct(is_64bit, target_process);
@@ -341,6 +342,7 @@ void wasapi_capture::eject()
 	target_process = INVALID_HANDLE_VALUE;
 	SetEvent(event_exit);
 	SetEvent(event_keepalive);
+	Sleep(100);
 }
 
 void wasapi_capture::init_events()
