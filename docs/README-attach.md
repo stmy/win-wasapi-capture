@@ -4,13 +4,13 @@ Plugin for the OBS-Studio to capture sound of specific application on Windows.
 
 <https://github.com/stmy/win-wasapi-capture>
 
-# How to use
+## How to use
 
 1. Copy `data` and `obs-plugins` folder into your `obs-studio` directory.
 2. Launch the OBS, and add `WASAPICapture` in your scene.
 3. Select application you want to capture the sound.
 
-# Copyright
+## Copyright
 
     win-wasapi-capture
     Copyright (C) 2017  stmy
