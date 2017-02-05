@@ -65,6 +65,8 @@ private:
 	void capture_thread_proc();
 	void init_events();
 	void free_events();
+	void inject_direct(bool is_64bit, HANDLE proc);
+	void inject_with_helper(bool is_64bit);
 	void inject();
 	void eject();
 	void init_pipe();

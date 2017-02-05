@@ -251,13 +251,72 @@ bool wasapi_capture::is_64bit_target(HANDLE proc)
 	if (is_wow64) {
 		return false; // 32-bit app on 64bit OS
 	} else {
-		is_wow64_process(GetCurrentProcess(), &is_wow64);
-		if (is_wow64) {
+#ifdef _WIN64
+		return true;
+#else
+		if (!is_wow64_process(GetCurrentProcess(), &is_wow64) || !is_wow64) {
 			return false;
 		} else {
 			return true;
 		}
+#endif
 	}
+}
+
+void wasapi_capture::inject_direct(bool is_64bit, HANDLE proc)
+{
+	char* dll_rel_name;
+	if (is_64bit) {
+		dll_rel_name = obs_module_file("wasapi-hook64.dll");
+	} else {
+		dll_rel_name = obs_module_file("wasapi-hook32.dll");
+	}
+
+	// char -> wchar_t
+	wchar_t* wcs_dll_rel_name;
+	os_utf8_to_wcs_ptr(dll_rel_name, 0, &wcs_dll_rel_name);
+
+	// relative -> absolute
+	wchar_t dll_abs_name[MAX_PATH * 2];
+	_wfullpath(dll_abs_name, wcs_dll_rel_name, MAX_PATH * 2);
+
+	int result = inject_library_obf(proc, dll_abs_name,
+		"D|hkqkW`kl{k\\osofj", 0xa178ef3655e5ade7,
+		"[uawaRzbhh{tIdkj~~", 0x561478dbd824387c,
+		"[fr}pboIe`dlN}", 0x395bfbc9833590fd,
+		"\\`zs}gmOzhhBq", 0x12897dd89168789a,
+		"GbfkDaezbp~X", 0x76aff7238788f7db);
+
+	bfree(dll_rel_name);
+	bfree(wcs_dll_rel_name);
+}
+
+void wasapi_capture::inject_with_helper(bool is_64bit)
+{
+	wchar_t* dll_name;
+	char* exe_rel_name;
+	if (is_64bit) {
+		dll_name = L"wasapi-hook64.dll";
+		exe_rel_name = obs_module_file("inject-helper64.exe");
+	} else {
+		dll_name = L"wasapi-hook32.dll";
+		exe_rel_name = obs_module_file("inject-helper32.exe");
+	}
+
+	wchar_t* wcs_exe_rel_name;
+	os_utf8_to_wcs_ptr(exe_rel_name, 0, &wcs_exe_rel_name);
+
+	wchar_t cmdline[4096];
+	swprintf(cmdline, 4096, L"\"%s\" \"%s\" %lu %lu",
+		wcs_exe_rel_name, dll_name, (unsigned long)false, process_id);
+
+	PROCESS_INFORMATION pi = { 0 };
+	STARTUPINFO si = { 0 };
+	BOOL r = CreateProcessW(wcs_exe_rel_name, cmdline, NULL, NULL,
+		false, CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+
+	bfree(exe_rel_name);
+	bfree(wcs_exe_rel_name);
 }
 
 void wasapi_capture::inject()
@@ -265,28 +324,12 @@ void wasapi_capture::inject()
 	HANDLE proc = open_process_obf(PROCESS_ALL_ACCESS, false, process_id);     
 	bool is_64bit = is_64bit_target(proc);
 
-	// Create absolute path to the DLL to inject
-	const char* dll_rel_name;
-	if (is_64bit) {
-		dll_rel_name = obs_module_file("wasapi-hook64.dll");
-	} else {
-		dll_rel_name = obs_module_file("wasapi-hook32.dll");
-	}
-
-	wchar_t* wcs_dll_rel_name;
-	os_utf8_to_wcs_ptr(dll_rel_name, 0, &wcs_dll_rel_name);
-
-	wchar_t dll_abs_name[MAX_PATH*2];
-	_wfullpath(dll_abs_name, wcs_dll_rel_name, MAX_PATH*2);
-	bfree(wcs_dll_rel_name);
-
-	// Inject!
-	int result = inject_library_obf(proc, dll_abs_name,
-		"D|hkqkW`kl{k\\osofj", 0xa178ef3655e5ade7,
-		"[uawaRzbhh{tIdkj~~", 0x561478dbd824387c,
-		"[fr}pboIe`dlN}", 0x395bfbc9833590fd,
-		"\\`zs}gmOzhhBq", 0x12897dd89168789a,
-		"GbfkDaezbp~X", 0x76aff7238788f7db);
+#ifdef _WIN64
+	inject_direct(is_64bit, proc);
+#else
+	if (is_64bit) inject_with_helper(is_64bit);
+	else          inject_direct(is_64bit, proc);
+#endif
 
 	CloseHandle(proc);
 }
