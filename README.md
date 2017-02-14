@@ -11,7 +11,7 @@ Plugin for the OBS-Studio to capture sound of specific application.
 ## How to build
 
 0. Clone [obs-studio repository](https://github.com/jp9000/obs-studio) first.
-1. clone this repository in `obs-studio/plugins`.
+1. Clone this repository into the `obs-studio/plugins` directory.
 2. Open `obs-studio/plugins/CMakeLists.txt`, then append a line `add_subdirectory(win-wasapi-capture)` just before the line `elseif(APPLE)`.
 3. Generate obs-studio solution with cmake (See <https://github.com/jp9000/obs-studio/wiki/Install-Instructions>).
 4. Build with generated solution.
